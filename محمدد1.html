@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <title>Neon War | حرب النيون</title>
+    <style>
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Arial', sans-serif; }
+        #ui { position: absolute; top: 20px; left: 20px; color: white; font-size: 24px; pointer-events: none; }
+    </style>
+</head>
+<body>
+    <div id="ui">النقاط: <span id="score">0</span></div>
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let score = 0;
+
+// فئة الطلقات
+class Projectile {
+    constructor(x, y, radius, color, velocity) {
+        this.x = x; this.y = y; this.radius = radius;
+        this.color = color; this.velocity = velocity;
+    }
+    draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+    }
+    update() {
+        this.draw();
+        this.x += this.velocity.x;
+        this.y += this.velocity.y;
+    }
+}
+
+// فئة الجزيئات (تأثير الانفجار)
+class Particle {
+    constructor(x, y, radius, color, velocity) {
+        this.x = x; this.y = y; this.radius = radius;
+        this.color = color; this.velocity = velocity;
+        this.alpha = 1; // للشفافية
+    }
+    draw() {
+        ctx.save();
+        ctx.globalAlpha = this.alpha;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+        ctx.restore();
+    }
+    update() {
+        this.draw();
+        this.velocity.x *= 0.99; // احتكاك
+        this.velocity.y *= 0.99;
+        this.x += this.velocity.x;
+        this.y += this.velocity.y;
+        this.alpha -= 0.01;
+    }
+}
+
+// فئة الأعداء
+class Enemy {
+    constructor(x, y, radius, color, velocity) {
+        this.x = x; this.y = y; this.radius = radius;
+        this.color = color; this.velocity = velocity;
+    }
+    draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+    }
+    update() {
+        this.draw();
+        this.x += this.velocity.x;
+        this.y += this.velocity.y;
+    }
+}
+
+const playerX = canvas.width / 2;
+const playerY = canvas.height / 2;
+const projectiles = [];
+const enemies = [];
+const particles = [];
+
+function spawnEnemies() {
+    setInterval(() => {
+        const radius = Math.random() * (30 - 10) + 10;
+        let x, y;
+        if (Math.random() < 0.5) {
+            x = Math.random() < 0.5 ? 0 - radius : canvas.width + radius;
+            y = Math.random() * canvas.height;
+        } else {
+            x = Math.random() * canvas.width;
+            y = Math.random() < 0.5 ? 0 - radius : canvas.height + radius;
+        }
+        const color = `hsl(${Math.random() * 360}, 50%, 50%)`;
+        const angle = Math.atan2(playerY - y, playerX - x);
+        const velocity = { x: Math.cos(angle), y: Math.sin(angle) };
+        enemies.push(new Enemy(x, y, radius, color, velocity));
+    }, 1000);
+}
+
+function animate() {
+    const animationId = requestAnimationFrame(animate);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.1)'; // تأثير التوهج الخلفي
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // رسم اللاعب (في المركز)
+    ctx.beginPath();
+    ctx.arc(playerX, playerY, 15, 0, Math.PI * 2);
+    ctx.fillStyle = 'white';
+    ctx.fill();
+
+    particles.forEach((particle, index) => {
+        if (particle.alpha <= 0) particles.splice(index, 1);
+        else particle.update();
+    });
+
+    projectiles.forEach((projectile, index) => {
+        projectile.update();
+        if (projectile.x < 0 || projectile.x > canvas.width || projectile.y < 0 || projectile.y > canvas.height) {
+            projectiles.splice(index, 1);
+        }
+    });
+
+    enemies.forEach((enemy, enemyIndex) => {
+        enemy.update();
+        const distToPlayer = Math.hypot(playerX - enemy.x, playerY - enemy.y);
+        if (distToPlayer - enemy.radius - 15 < 1) {
+            cancelAnimationFrame(animationId);
+            alert("انتهت اللعبة! نقاطك: " + score);
+            location.reload();
+        }
+
+        projectiles.forEach((projectile, projIndex) => {
+            const dist = Math.hypot(projectile.x - enemy.x, projectile.y - enemy.y);
+            if (dist - enemy.radius - projectile.radius < 1) {
+                // إنشاء انفجار جزيئات
+                for (let i = 0; i < enemy.radius * 2; i++) {
+                    particles.push(new Particle(projectile.x, projectile.y, Math.random() * 2, enemy.color, {
+                        x: (Math.random() - 0.5) * (Math.random() * 6),
+                        y: (Math.random() - 0.5) * (Math.random() * 6)
+                    }));
+                }
+                score += 100;
+                scoreEl.innerHTML = score;
+                setTimeout(() => {
+                    enemies.splice(enemyIndex, 1);
+                    projectiles.splice(projIndex, 1);
+                }, 0);
+            }
+        });
+    });
+}
+
+window.addEventListener('click', (event) => {
+    const angle = Math.atan2(event.clientY - playerY, event.clientX - playerX);
+    const velocity = { x: Math.cos(angle) * 5, y: Math.sin(angle) * 5 };
+    projectiles.push(new Projectile(playerX, playerY, 5, 'white', velocity));
+});
+
+spawnEnemies();
+animate();
+</script>
+</body>
+</html>
